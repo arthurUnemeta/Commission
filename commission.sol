@@ -9,16 +9,13 @@ import {MerkleProof} from "@openzeppelin/contracts/utils/cryptography/MerkleProo
 error InvalidMerkleProof();
 
 contract UnemetaCommission is Pausable,ReentrancyGuard ,Ownable{
-
-
     struct Claimed{
         uint256 id;
         bool clamed;
     }
 
     uint256 public amount =0;
-    mapping(uint256 => bytes32) private _trees;
-    mapping(uint256 => bool) private _treeused;
+    bytes32 private _trees;
     mapping(address =>mapping(uint256=>bool))private _claimed;
     
  
@@ -33,8 +30,8 @@ contract UnemetaCommission is Pausable,ReentrancyGuard ,Ownable{
     );
 
     function deposit() public payable {
-        amount +=msg.value;
         _pause();
+        amount +=msg.value;
     }
 
     function unpauseDistribution() external onlyOwner whenPaused {
@@ -46,21 +43,22 @@ contract UnemetaCommission is Pausable,ReentrancyGuard ,Ownable{
     return address(this).balance;
     }
 
-    function claim(uint256 _id,uint256 _treeid ,uint256 _amounts,bytes32[] calldata _proof)
+    function claim(uint256 _id,uint256 _amounts,bytes32[] calldata _proof)
     external
+    whenNotPaused
     {
         //makesure treeis is true
-        require(_treeused[_treeid],"tree id is not used");
+        require((_trees.length>0),"tree is not used");
         require(!(_claimed[msg.sender][_id]),"id has used");
-        bytes32 root = _trees[_treeid];
-        bytes32 leaf = keccak256(abi.encodePacked(msg.sender,_treeid,_amounts,_id));
-        if (!MerkleProof.verifyCalldata(_proof, root, leaf)) revert InvalidMerkleProof();
+        bytes32 leaf = keccak256(abi.encodePacked(msg.sender,_amounts,_id));
+        if (!MerkleProof.verifyCalldata(_proof, _trees, leaf)) revert InvalidMerkleProof();
         uint256 _amount;
         if (getb()>=_amounts){
             _amount = _amounts;
         }else{
             _amount = getb();
         }
+        require(_amount<_amounts,"too many amount error");
         require(_amount!=0,"error amount");
         _claimed[msg.sender][_id] = true;
         (bool success,) = payable(msg.sender).call{value: _amount}("");
@@ -75,6 +73,7 @@ contract UnemetaCommission is Pausable,ReentrancyGuard ,Ownable{
     {   
         uint256 contractBalance = address(this).balance;
         require((contractBalance >= _amount)  ,"error") ;
+        _pause();
         amount -= _amount;
         (bool success,) = payable(_to).call{value: _amount}("");
         require(success,"cdsa");
@@ -85,9 +84,8 @@ contract UnemetaCommission is Pausable,ReentrancyGuard ,Ownable{
     external 
     onlyOwner 
     {
-        require(!(_treeused[treeid]),"treeid has used");
-        _trees[treeid] = newRoot_;
-        _treeused[treeid]=true;
+        _pause();
+        _trees = newRoot_;
         emit SetNewMerkleRoot(treeid);
     }
 }
